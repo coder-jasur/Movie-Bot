@@ -107,11 +107,9 @@ async def mini_series_player(call: CallbackQuery, callback_data: MiniSeriesPlaye
     mini_series_data = await mini_series_actions.get_mini_series(callback_data.code)
     current_series = None
     for series in mini_series_data:
-        print(series)
         if series[2] == callback_data.series_number:
             current_series = series
     saved = bool(saved)
-    print(saved)
 
     if callback_data.action == "delete_for_favorites" and saved:
         await favorite_films_actions.delete_favorite_movie(callback_data.code, call.from_user.id)

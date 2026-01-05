@@ -521,3 +521,15 @@ def not_channels_button(channel_data):
 
     builder_button.row(InlineKeyboardButton(text="✅", callback_data="check_sub"))
     return builder_button.as_markup()
+
+
+instagram_channel_kbd = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="Instagram Kanal",
+                url="https://www.instagram.com/film.zonasi/"
+            )
+        ]
+    ]
+)

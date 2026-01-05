@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 class Broadcaster:
 
     def __init__(
-        self,
-        bot: Bot,
-        pool: asyncpg.Pool,
-        admin_id: int,
-        broadcasting_message: Message | None = None,
-        album: list[Message] | None = None,
-        batch_size: int = 5000,
-        sleep_seconds: float = 0.04  # Default: 25 messages per second (below API limit)
+            self,
+            bot: Bot,
+            pool: asyncpg.Pool,
+            admin_id: int,
+            broadcasting_message: Message | None = None,
+            album: list[Message] | None = None,
+            batch_size: int = 5000,
+            sleep_seconds: float = 0.05  # Default: 25 messages per second (below API limit)
     ):
         """
         Initialize the broadcaster
@@ -85,10 +85,10 @@ class Broadcaster:
         )
 
     async def _update_info_message(
-        self,
-        info_message: Message,
-        info_message_text: str,
-        include_total: bool = False
+            self,
+            info_message: Message,
+            info_message_text: str,
+            include_total: bool = False
     ) -> None:
         """
         Update status message with current progress
@@ -122,7 +122,7 @@ class Broadcaster:
         Start broadcasting messages to all users
 
         Returns:
-            List of user IDs who blocked the bot
+            Tuple of (blocked_count, deleted_count, limited_count, deactivated_count)
         """
         info_message_text = (
             "Отправка сообщений: {sent}\n"
@@ -178,10 +178,10 @@ class Broadcaster:
             logger.info(
                 f"Broadcasting completed: {self.sent_messages_count} sent, "
                 f"{self.failed_messages_count} failed, "
-                f"{len(self.blocked_users)} blocked, "
-                f"{len(self.deleted_users)} deleted, "
-                f"{len(self.deleted_users)} limited, "
-                f"{len(self.deleted_users)} deactivated accounts, "
+                f"{self.total_blocked_users} blocked, "
+                f"{self.total_deleted_users} deleted, "
+                f"{self.total_limited_users} limited, "
+                f"{self.total_deactivated_users} deactivated accounts, "
                 f"{self.processed_batches} batches processed"
             )
 
@@ -196,8 +196,7 @@ class Broadcaster:
             try:
                 await self._update_info_message(info_message, info_message_text, include_total=True)
             except Exception as e:
-                print(e)
-                pass
+                logger.error(f"Error in final update: {e}")
 
             # Удаляем предпросмотр рассылки
             await self._delete_preview()
@@ -216,12 +215,11 @@ class Broadcaster:
             self.total_limited_users, self.total_deactivated_users
         )
 
-
     async def _process_batch(
-        self,
-        user_ids: list[int],
-        info_message: Message,
-        info_message_text: str
+            self,
+            user_ids: list[int],
+            info_message: Message,
+            info_message_text: str
     ) -> None:
         """
         Process a batch of users
@@ -233,6 +231,7 @@ class Broadcaster:
         """
         batch_sent = 0
         batch_failed = 0
+        should_update = False
 
         for user_id in user_ids:
             result = await self._send_broadcasting_message(user_id)
@@ -255,9 +254,7 @@ class Broadcaster:
 
             await asyncio.sleep(self.sleep_seconds)
 
-            # Периодическое обновление статуса внутри пачки (чтобы не быть слишком частым)
-            should_update = True
-
+            # Периодическое обновление статуса внутри пачки
             # Обновляем каждые N сообщений
             if batch_sent > 0 and batch_sent % (self.message_per_second * 4) == 0:
                 should_update = True
@@ -267,6 +264,7 @@ class Broadcaster:
 
             if should_update:
                 await self._update_info_message(info_message, info_message_text)
+                should_update = False
 
     async def _send_broadcasting_message(self, user_id: int) -> Union[bool, int, str]:
         """
@@ -279,6 +277,8 @@ class Broadcaster:
             True if successful,
             user_id if blocked by user,
             "deleted" if account deleted,
+            "limited" if account limited,
+            "deactivated" if account deactivated,
             False otherwise
         """
         try:
@@ -331,23 +331,39 @@ class Broadcaster:
         return False
 
     async def _update_user_status(self, user_ids: list[int], status: str = "blocked") -> None:
+        """
+        Update user status in database
+
+        Args:
+            user_ids: List of user IDs to update
+            status: Status to set (blocked, deleted, limited, deactivated)
+        """
+        if not user_ids:
+            return
+
         query = """
             UPDATE users
-            SET status = ?
-            WHERE users.id IN ?
+            SET status = $1
+            WHERE tg_id = ANY($2::bigint[])
         """
-        async with self._pool.acquire() as conn:
-            await conn.execute(query, (status, user_ids,))
+
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(query, status, user_ids)
+                logger.debug(f"Updated {len(user_ids)} users to status: {status}")
+        except Exception as e:
+            logger.error(f"Failed to update user status: {e}")
+            raise
 
     async def _mark_user_statuses(
-        self,
-        blocked_user_ids: list[int],
-        deleted_user_ids: list[int],
-        limited_users_ids: list[int],
-        deactivated_user_ids: list[int]
+            self,
+            blocked_user_ids: list[int],
+            deleted_user_ids: list[int],
+            limited_users_ids: list[int],
+            deactivated_user_ids: list[int]
     ) -> None:
         """
-        Mark users with appropriate blocked statuses in database
+        Mark users with appropriate statuses in database
 
         Args:
             blocked_user_ids: List of IDs for users who blocked the bot
@@ -356,36 +372,53 @@ class Broadcaster:
             deactivated_user_ids: List of IDs for users who deactivated
         """
         try:
-            # Обработка заблокированных пользователей
-            if blocked_user_ids:
-                await self._update_user_status(blocked_user_ids)
-                logger.info(f"Marked {len(blocked_user_ids)} users as BLOCKED")
+            # Используем транзакцию для атомарности
+            async with self._pool.acquire() as conn:
+                async with conn.transaction():
+                    # Обработка заблокированных пользователей
+                    if blocked_user_ids:
+                        query = """
+                            UPDATE users
+                            SET status = $1
+                            WHERE tg_id = ANY($2::bigint[])
+                        """
+                        await conn.execute(query, "blocked", blocked_user_ids)
+                        logger.info(f"Marked {len(blocked_user_ids)} users as BLOCKED")
 
-            # Обработка удаленных аккаунтов
-            if deleted_user_ids:
-                await self._update_user_status(deleted_user_ids)
-                logger.info(f"Marked {len(deleted_user_ids)} users as ACCOUNT_DELETED")
+                    # Обработка удаленных аккаунтов
+                    if deleted_user_ids:
+                        query = """
+                            UPDATE users
+                            SET status = $1
+                            WHERE tg_id = ANY($2::bigint[])
+                        """
+                        await conn.execute(query, "deleted", deleted_user_ids)
+                        logger.info(f"Marked {len(deleted_user_ids)} users as DELETED")
 
-            # Обработка ограниченных аккаунтов
-            if limited_users_ids:
-                await self._update_user_status(limited_users_ids)
-                logger.info(f"Marked {len(limited_users_ids)} users as LIMITED")
+                    # Обработка ограниченных аккаунтов
+                    if limited_users_ids:
+                        query = """
+                            UPDATE users
+                            SET status = $1
+                            WHERE tg_id = ANY($2::bigint[])
+                        """
+                        await conn.execute(query, "limited", limited_users_ids)
+                        logger.info(f"Marked {len(limited_users_ids)} users as LIMITED")
 
-            # Обработка деактивированных аккаунтов
-            if deactivated_user_ids:
-                await self._update_user_status(deactivated_user_ids)
-                logger.info(f"Marked {len(deactivated_user_ids)} users as DEACTIVATED")
-
-            # Применение изменений
-            if blocked_user_ids or deleted_user_ids or limited_users_ids or deactivated_user_ids:
-                async with self._pool.acquire() as conn:
-                    await conn.commit()
+                    # Обработка деактивированных аккаунтов
+                    if deactivated_user_ids:
+                        query = """
+                            UPDATE users
+                            SET status = $1
+                            WHERE tg_id = ANY($2::bigint[])
+                        """
+                        await conn.execute(query, "deactivated", deactivated_user_ids)
+                        logger.info(f"Marked {len(deactivated_user_ids)} users as DEACTIVATED")
 
         except Exception as e:
             logger.error(f"Failed to mark user statuses: {e}")
-            # Откатываем транзакцию в случае ошибки
-            async with self._pool.acquire() as conn:
-                await conn.rollback()
+            # asyncpg автоматически откатывает транзакцию при ошибке
+            raise
 
     async def _delete_preview(self) -> None:
         """Delete preview messages from admin chat"""
@@ -393,7 +426,7 @@ class Broadcaster:
             if self.broadcasting_message:
                 await self._bot.delete_message(
                     chat_id=self.admin_id,
-                    message_id=self.broadcasting_message.from_user.id
+                    message_id=self.broadcasting_message.message_id
                 )
             elif self.album:
                 await self._bot.delete_messages(
@@ -441,24 +474,24 @@ class Broadcaster:
                 )
             elif message.content_type == types.ContentType.VIDEO:
                 return InputMediaVideo(
-                    media=message.video.file_id,  # Fixed: use video.file_id
+                    media=message.video.file_id,
                     caption=message.html_text if hasattr(message, 'html_text') else None,
                     has_spoiler=message.has_media_spoiler if hasattr(message, 'has_media_spoiler') else None
                 )
             elif message.content_type == types.ContentType.ANIMATION:
                 return InputMediaAnimation(
-                    media=message.animation.file_id,  # Fixed: use animation.file_id
+                    media=message.animation.file_id,
                     caption=message.html_text if hasattr(message, 'html_text') else None,
                     has_spoiler=message.has_media_spoiler if hasattr(message, 'has_media_spoiler') else None
                 )
             elif message.content_type == types.ContentType.DOCUMENT:
                 return InputMediaDocument(
-                    media=message.document.file_id,  # Fixed: use document.file_id
+                    media=message.document.file_id,
                     caption=message.html_text if hasattr(message, 'html_text') else None
                 )
             elif message.content_type == types.ContentType.AUDIO:
                 return InputMediaAudio(
-                    media=message.audio.file_id,  # Fixed: use audio.file_id
+                    media=message.audio.file_id,
                     caption=message.html_text if hasattr(message, 'html_text') else None
                 )
             else:

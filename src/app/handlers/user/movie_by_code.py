@@ -7,7 +7,7 @@ from src.app.database.queries.movie.feature_films import FeatureFilmsActions
 from src.app.database.queries.movie.mini_series import MiniSeriesActions
 from src.app.database.queries.movie.series import SeriesActions
 from src.app.filters.code import Code
-from src.app.keyboards.inline import film_kbd, mini_series_player_kbd, series_player_kbd
+from src.app.keyboards.inline import film_kbd, mini_series_player_kbd, series_player_kbd, instagram_channel_kbd
 
 send_movie_by_code_router = Router()
 send_movie_by_code_router.message.filter(Code)
@@ -15,7 +15,15 @@ send_movie_by_code_router.message.filter(Code)
 
 @send_movie_by_code_router.message()
 async def send_movie_by_code(message: Message, pool: asyncpg.Pool):
-    code = int(message.text)
+    if message.text.isdigit():
+        code = int(message.text)
+    else:
+        await message.answer(
+            "🍿 Filmni topish uchun uning raqamli kodini yuboring 😊\n\n"
+            "📢 Filmlarni bizning kanaldan topishingiz mumkin 👇",
+            reply_markup=instagram_channel_kbd
+        )
+        return
     favorite_actions = FavoriteMoviesActions(pool)
     feature_films_actions = FeatureFilmsActions(pool)
     mini_series_actions = MiniSeriesActions(pool)
