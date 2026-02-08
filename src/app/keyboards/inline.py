@@ -1,183 +1,8 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from src.app.keyboards.callback_data import FeatureFilmsCD, SeriesCD, MiniSeriesCD, SeriesPlayerCD, FeatureFilmPlayerCD, \
-    MiniSeriesPlayerCD, ActionType, DeleteMovie, ChannelsCD, BotCD
-
-choose_movie_type = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(text="фильм", callback_data="feature_films")
-        ],
-        [
-            InlineKeyboardButton(text="сериал", callback_data="series")
-        ],
-        [
-            InlineKeyboardButton(text="фильм с эпизодами", callback_data="mini_series")
-        ],
-        [
-            InlineKeyboardButton(text="назад", callback_data="back_to_admin_menu")
-        ]
-    ]
-)
-
-add_feature_films_menu_buttons = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="добавить код",
-                callback_data=FeatureFilmsCD(actions="add_movie_code").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить название фильиа",
-                callback_data=FeatureFilmsCD(actions="add_movie_name").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить видео",
-                callback_data=FeatureFilmsCD(actions="add_movie_media").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить описание",
-                callback_data=FeatureFilmsCD(actions="add_movie_caption").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить √",
-                callback_data=FeatureFilmsCD(actions="add_movie").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(text="назад", callback_data="back_to_movie_setup")
-        ]
-    ]
-)
-
-add_series_menu_buttons = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="добавить код",
-                callback_data=SeriesCD(actions="add_movie_code").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить название фильиа",
-                callback_data=SeriesCD(actions="add_movie_name").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить видео",
-                callback_data=SeriesCD(actions="add_movie_media").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить описание",
-                callback_data=SeriesCD(actions="add_movie_caption").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить серию",
-                callback_data=SeriesCD(actions="add_movie_series").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить сезон",
-                callback_data=SeriesCD(actions="add_movie_season").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить √",
-                callback_data=SeriesCD(actions="add_movie").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="назад",
-                callback_data="back_to_movie_setup"
-            )
-        ]
-    ]
-)
-
-add_mini_series_menu_buttons = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="добавить код",
-                callback_data=MiniSeriesCD(actions="add_movie_code").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить название фильиа",
-                callback_data=MiniSeriesCD(actions="add_movie_name").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить видео",
-                callback_data=MiniSeriesCD(actions="add_movie_media").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить описание",
-                callback_data=MiniSeriesCD(actions="add_movie_caption").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить серию",
-                callback_data=MiniSeriesCD(actions="add_movie_series").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="добавить √",
-                callback_data=MiniSeriesCD(actions="add_movie").pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="назад",
-                callback_data="back_to_movie_setup"
-            )
-        ]
-    ]
-)
-
-admin_menu = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(text="добавить фильм", callback_data="add_movie")
-        ],
-        [
-            InlineKeyboardButton(text="удалить фильм", callback_data="delete_movie")
-        ],
-        [
-            InlineKeyboardButton(text="рассылка", callback_data="broadcast")
-        ],
-        [
-            InlineKeyboardButton(text="обязательные подписки", callback_data="mandatory_subscriptions")
-        ],
-        [
-            InlineKeyboardButton(text="количесво пользывателей ", callback_data="users_count")
-        ]
-    ]
-)
+from src.app.keyboards.callback_data import SeriesPlayerCD, FeatureFilmPlayerCD, \
+    MiniSeriesPlayerCD, ActionType
 
 
 def series_player_kbd(
@@ -404,70 +229,7 @@ def mini_series_player_kbd(code: int, current_seria: int, serias_count: int, sav
 
 
 
-def confirm_delete_kbd(code: int, action: str):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="Да",
-                callback_data=DeleteMovie(action=action, code=code, season=0, series=0).pack()
-            ),
-            InlineKeyboardButton(
-                text="Нет",
-                callback_data="back_to_admin_menu"
-            )
-        ]
-    ])
 
-
-def mini_series_choice_kbd(code: int):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="🧩 удалить епизод",
-                callback_data=DeleteMovie(action="delete_mini_series_epizod", code=code, season=0, series=0).pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🗑️ удалить полнатю ",
-                callback_data=DeleteMovie(action="delete_mini_series_all", code=code, season=0, series=0).pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(text="Назад", callback_data="back_to_admin_menu")
-        ]
-    ])
-
-
-def series_choice_kbd(code: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="🗑 удалить полнатю ",
-        callback_data=DeleteMovie(code=code, action="delete_series_all", season=0, series=0).pack()
-    )
-    builder.button(
-        text="📂 удалить сезон",
-        callback_data=DeleteMovie(code=code, action="delete_series_season", season=0, series=0).pack()
-    )
-    builder.button(
-        text="удалить епизод",
-        callback_data=DeleteMovie(code=code, action="delete_series_epizod", season=0, series=0).pack()
-    )
-    builder.button(
-        text="Назад",
-        callback_data="back_to_admin_menu"
-    )
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-back_to_admin_menu_kbd = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(text="Назад", callback_data="back_to_admin_menu")
-        ]
-    ]
-)
 
 start_menu = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -481,14 +243,14 @@ start_menu = InlineKeyboardMarkup(
 def not_channels_button(channel_data, bots_data):
     builder_button = InlineKeyboardBuilder()
     for bot in bots_data:
-
+        # bot is Bot object
         builder_button.row(
-            InlineKeyboardButton(text=bot[0], url=bot[3])
+            InlineKeyboardButton(text=bot.bot_name, url=bot.bot_url)
         )
     for channel in channel_data:
-
+        # channel is Channel object
         builder_button.row(
-            InlineKeyboardButton(text=channel[1], url=channel[5])
+            InlineKeyboardButton(text=channel.channel_name, url=channel.channel_url)
         )
 
     builder_button.row(InlineKeyboardButton(text="✅", callback_data="check_sub"))

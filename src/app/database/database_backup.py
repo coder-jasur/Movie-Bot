@@ -1,12 +1,11 @@
 import logging
-
 import aiofiles
-import asyncpg
 from aiogram.types import FSInputFile
 import os
 import asyncio
 import datetime
 from aiogram import Bot
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.app.database.queries.user import UserActions
 
@@ -29,15 +28,17 @@ async def send_database_to_owner(bot: Bot, chat_ids: list[int], db_path: str):
         await asyncio.gather(*tasks)
 
 
-async def daily_database_sender(bot: Bot, chat_ids: list[int], pool: asyncpg.Pool) -> None:
+async def daily_database_sender(bot: Bot, chat_ids: list[int], session_pool: async_sessionmaker) -> None:
     while True:
         try:
-            user_actions = UserActions(pool)
-            all_users = await user_actions.get_all_user()
+            async with session_pool() as session:
+                user_actions = UserActions(session)
+                all_users = await user_actions.get_all_user()
 
             async with aiofiles.open("all_users.txt", "w", encoding="utf-8") as f:
                 for user in all_users:
-                    await f.write(f"{user[0]}\n")
+                    # user is now a User object, so we access .tg_id
+                    await f.write(f"{user.tg_id}\n")
 
             now = datetime.datetime.now()
             target_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -52,5 +53,5 @@ async def daily_database_sender(bot: Bot, chat_ids: list[int], pool: asyncpg.Poo
 
         except Exception as e:
             logger.exception(e)
-
-
+            # Sleep a bit to avoid rapid loop on error
+            await asyncio.sleep(60)

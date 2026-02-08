@@ -1,15 +1,21 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
+# Upgrade pip and install uv
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir uv
+
+# Copy configuration files
 COPY pyproject.toml /app/
+
+# Compile requirements
+RUN uv pip compile pyproject.toml > requirements.txt
+
+# Install dependencies system-wide
+RUN uv pip install -r requirements.txt --system
+
+# Copy application code
 COPY . /app/
-
-RUN uv pip compile /app/pyproject.toml > /app/requirement.txt
-
-RUN uv pip install -r /app/requirement.txt --system
-
-COPY . .
-
 
 CMD ["python", "-m", "src.app.main"]

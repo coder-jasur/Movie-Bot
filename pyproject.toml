@@ -11,4 +11,11 @@ dependencies = [
     "colorlog>=6.10.1",
     "environs>=14.3.0",
     "pyyaml>=6.0.3",
+    "rapidfuzz>=3.14.3",
+    "sqlalchemy>=2.0.0",
+    "redis>=5.0.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

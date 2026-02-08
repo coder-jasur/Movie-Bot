@@ -10,13 +10,13 @@ This module contains all event handlers for:
 
 import logging
 
-import asyncpg
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import CallbackQuery, Message
 from aiogram_dialog import DialogManager
 
 from src.app.database.queries.bots import BotActions
 from src.app.database.queries.channels import ChannelActions
-from src.app.keyboards.inline import admin_menu
 from src.app.states.admin.channel import OPMenu, ChannelMenu, AddChannelState, AddBotState, BotMenu
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ async def handle_channel_forward(
         message: Forwarded message from channel
         dialog_manager: Current dialog state manager
     """
-    pool: asyncpg.Pool = dialog_manager.middleware_data["pool"]
+    session: AsyncSession = dialog_manager.middleware_data["session"]
 
     # Check if message is forwarded from a channel
     if not message.forward_from_chat:
@@ -49,7 +49,7 @@ async def handle_channel_forward(
         logger.warning("User attempted to add channel without forwarding a message")
         return
 
-    channel_actions = ChannelActions(pool)
+    channel_actions = ChannelActions(session)
     channel_id = message.forward_from_chat.id
 
     # Check if channel already exists
@@ -96,8 +96,8 @@ async def handle_channel_url_input(
         logger.warning("User sent non-text message as channel URL")
         return
 
-    pool: asyncpg.Pool = dialog_manager.middleware_data["pool"]
-    channel_actions = ChannelActions(pool)
+    session: AsyncSession = dialog_manager.middleware_data["session"]
+    channel_actions = ChannelActions(session)
     channel_data = dialog_manager.dialog_data.get("channel_data")
 
     if not channel_data:
@@ -121,7 +121,7 @@ async def handle_channel_url_input(
             f"({channel_data['channel_id']}) - {channel_url}"
         )
 
-    except asyncpg.UniqueViolationError:
+    except IntegrityError:
         logger.warning(f"Channel {channel_data['channel_id']} already exists (unique violation)")
         dialog_manager.dialog_data["msg_type"] = "already_exists"
         return
@@ -133,7 +133,6 @@ async def handle_channel_url_input(
 
     finally:
         await dialog_manager.done()
-        await dialog_manager.start(OPMenu.menu)
 
 
 async def handle_get_channel_info(
@@ -171,15 +170,15 @@ async def handle_delete_channel(
     Args:
         manager: Current dialog state manager
     """
-    pool: asyncpg.Pool = manager.middleware_data["pool"]
+    session: AsyncSession = manager.middleware_data["session"]
     channel_id = manager.dialog_data.get("channel_id")
 
     if not channel_id:
         logger.error("Channel ID not found in dialog_data for deletion")
-        await manager.start(OPMenu.menu)
+        await manager.done()
         return
 
-    channel_actions = ChannelActions(pool)
+    channel_actions = ChannelActions(session)
 
     try:
         await channel_actions.delete_channel(channel_id)
@@ -203,14 +202,14 @@ async def handle_toggle_channel_op_status(
     Args:
         manager: Current dialog state manager
     """
-    pool: asyncpg.Pool = manager.middleware_data["pool"]
+    session: AsyncSession = manager.middleware_data["session"]
     channel_id = manager.dialog_data.get("channel_id")
 
     if not channel_id:
         logger.error("Channel ID not found in dialog_data for status toggle")
         return
 
-    channel_actions = ChannelActions(pool)
+    channel_actions = ChannelActions(session)
 
     try:
         channel_data = await channel_actions.get_channel(channel_id)
@@ -220,7 +219,7 @@ async def handle_toggle_channel_op_status(
             return
 
         # Toggle status: "True" <-> "False"
-        current_status = channel_data[3]
+        current_status = channel_data.channel_status
         new_status = "False" if current_status == "True" else "True"
 
         await channel_actions.update_channel_status(new_status, channel_id)
@@ -258,8 +257,8 @@ async def handle_bot_username_input(
         logger.warning("User sent non-text message as bot username")
         return
 
-    pool: asyncpg.Pool = dialog_manager.middleware_data["pool"]
-    bot_actions = BotActions(pool)
+    session: AsyncSession = dialog_manager.middleware_data["session"]
+    bot_actions = BotActions(session)
 
     # Clean username: remove @ symbol if present
     bot_username = message.text.strip().lstrip("@")
@@ -351,8 +350,8 @@ async def handle_bot_name_input(
         logger.warning("User sent non-text message as bot name")
         return
 
-    pool: asyncpg.Pool = dialog_manager.middleware_data["pool"]
-    bot_actions = BotActions(pool)
+    session: AsyncSession = dialog_manager.middleware_data["session"]
+    bot_actions = BotActions(session)
 
     bot_name = message.text.strip()
     bot_username = dialog_manager.dialog_data.get("bot_username")
@@ -374,7 +373,7 @@ async def handle_bot_name_input(
         )
         logger.info(f"✅ Bot added successfully: {bot_name} (@{bot_username}) - {bot_url}")
 
-    except asyncpg.UniqueViolationError:
+    except IntegrityError:
         logger.warning(f"Bot @{bot_username} already exists (unique violation)")
         dialog_manager.dialog_data["msg_type"] = "already_exists"
         return
@@ -386,7 +385,6 @@ async def handle_bot_name_input(
 
     finally:
         await dialog_manager.done()
-        await dialog_manager.start(OPMenu.menu)
 
 
 async def handle_get_bot_info(
@@ -420,15 +418,15 @@ async def handle_delete_bot(
     Args:
         manager: Current dialog state manager
     """
-    pool: asyncpg.Pool = manager.middleware_data["pool"]
+    session: AsyncSession = manager.middleware_data["session"]
     bot_username = manager.dialog_data.get("bot_username")
 
     if not bot_username:
         logger.error("Bot username not found in dialog_data for deletion")
-        await manager.start(OPMenu.menu)
+        await manager.done()
         return
 
-    bot_actions = BotActions(pool)
+    bot_actions = BotActions(session)
 
     try:
         await bot_actions.delete_bot(bot_username)
@@ -436,7 +434,7 @@ async def handle_delete_bot(
     except Exception as e:
         logger.error(f"❌ Error deleting bot @{bot_username}: {e}", exc_info=True)
 
-    await manager.start(OPMenu.menu)
+    await manager.done()
 
 
 async def handle_toggle_bot_op_status(
@@ -452,14 +450,14 @@ async def handle_toggle_bot_op_status(
     Args:
         manager: Current dialog state manager
     """
-    pool: asyncpg.Pool = manager.middleware_data["pool"]
+    session: AsyncSession = manager.middleware_data["session"]
     bot_username = manager.dialog_data.get("bot_username")
 
     if not bot_username:
         logger.error("Bot username not found in dialog_data for status toggle")
         return
 
-    bot_actions = BotActions(pool)
+    bot_actions = BotActions(session)
 
     try:
         bot_data = await bot_actions.get_bot(bot_username)
@@ -469,7 +467,7 @@ async def handle_toggle_bot_op_status(
             return
 
         # Toggle status: "True" <-> "False"
-        current_status = bot_data[2]
+        current_status = bot_data.bot_status
         new_status = "False" if current_status == "True" else "True"
 
         await bot_actions.update_bot_status(new_status, bot_username)
@@ -482,28 +480,3 @@ async def handle_toggle_bot_op_status(
 
     await manager.switch_to(BotMenu.menu)
 
-
-# ==================== GENERAL HANDLERS ====================
-
-async def handle_dialog_done(
-        call: CallbackQuery,
-        _,
-        dialog_manager: DialogManager
-) -> None:
-    """
-    Close current dialog and return to admin menu.
-
-    Args:
-        call: Callback query from button press
-        dialog_manager: Current dialog state manager
-    """
-    await dialog_manager.done()
-
-    try:
-        await call.message.edit_text(
-            text="🔧 Выберите действие",
-            reply_markup=admin_menu
-        )
-        logger.debug("Dialog closed, returned to admin menu")
-    except Exception as e:
-        logger.error(f"Error editing message on dialog close: {e}")

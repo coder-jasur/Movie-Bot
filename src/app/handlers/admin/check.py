@@ -1,7 +1,7 @@
-import asyncpg
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
 from aiogram_dialog import DialogManager
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.database.queries.bots import BotActions
 from src.app.database.queries.channels import ChannelActions
@@ -15,12 +15,12 @@ check_sub_router = Router()
 async def check_channel_sub(
         call: CallbackQuery,  # вместо _ используем call
         dialog_manager: DialogManager,
-        pool: asyncpg.Pool,
+        session: AsyncSession,
         bot: Bot,
 ):
-    channel_actions = ChannelActions(pool)
-    bot_actions = BotActions(pool)
-    user_actions = UserActions(pool)
+    channel_actions = ChannelActions(session)
+    bot_actions = BotActions(session)
+    user_actions = UserActions(session)
 
     user_data = await user_actions.get_user(call.from_user.id)
     channel_data = await channel_actions.get_all_channels()
@@ -30,25 +30,29 @@ async def check_channel_sub(
 
     # Проверка подписки на обязательные каналы
     for channel in channel_data:
-        # channel[3] должен быть boolean True, а не строкой "True"
-        if channel[3] is True or channel[3] == "True":
+        # channel_status
+        if channel.channel_status == "True" or channel.channel_status is True:
             try:
-                user_status = await bot.get_chat_member(channel[0], call.from_user.id)
+                user_status = await bot.get_chat_member(channel.channel_id, call.from_user.id)
                 if user_status.status not in ["member", "administrator", "creator"]:
                     not_sub_channels.append(channel)
             except Exception as e:
                 # Если канал не найден или возникла ошибка
-                print(f"Ошибка при проверке канала {channel[0]}: {e}")
+                # print(f"Ошибка при проверке канала {channel.channel_id}: {e}")
                 continue
 
-    for bot in bot_data:
-        # channel[3] должен быть boolean True, а не строкой "True"
-        if bot[2] is True or bot[2] == "True":
+    for bot_obj in bot_data:
+        # bot_status
+        if bot_obj.bot_status == "True" or bot_obj.bot_status is True:
             try:
-                not_sub_bots.append(bot)
+               # Logic to check bot sub? Usually bots are just sending /start.
+               # Original code just added to not_sub_bots list to show button?
+               # The logic in original 'check_sub' for bots iterates bot_data, checks status, appends to not_sub_bots.
+               # It doesn't seem to verify if user started the bot (Telegram API doesn't allow checking if user started another bot easily).
+               # So maybe it just lists them?
+               not_sub_bots.append(bot_obj)
             except Exception as e:
-                # Если канал не найден или возникла ошибка
-                print(f"Ошибка при проверке канала {bot[0]}: {e}")
+                # print(f"Ошибка при проверке канала {bot_obj.bot_username}: {e}")
                 continue
 
     # Если пользователь подписан на все каналы
@@ -60,12 +64,18 @@ async def check_channel_sub(
                 call.from_user.username or call.from_user.first_name,
             )
 
+        name = (
+                call.message.from_user.first_name
+                or call.message.from_user.last_name
+                or call.message.from_user.full_name
+                or "Do'stim"
+        )
+
         # Приветственное сообщение
         await call.message.edit_text(
-            f"👋 <b>Привет, {call.from_user.first_name or call.from_user.full_name}</b>\n\n"
-            f"<b>Добро пожаловать в наш бот.</b>\n\n"
-            f"<b>🍿 Отправьте код фильма: </b>",
-            parse_mode="HTML"
+            f"<b>👋 Salom {name}</b>\n\n"
+            f"<b>Botimizga xush kelibsiz.</b>\n\n"
+            f"<b>🍿 Kino kodini yuboring:</b>"
         )
         # Удаление старого сообщения
 
@@ -73,15 +83,15 @@ async def check_channel_sub(
     else:
         try:
             await call.message.edit_text(
-                "Чтобы пользоваться ботом, подпишитесь на следующие каналы 👇",
+                "Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling 👇",
                 reply_markup=not_channels_button(not_sub_channels, not_sub_bots),
             )
         except Exception as e:
             # Если edit_text не сработал (старое сообщение)
-            print(f"Ошибка при редактировании сообщения: {e}")
-            await call.message.delete()
+            # print(f"Ошибка при редактировании сообщения: {e}")
+            # await call.message.delete() # Might fail if message too old
             await call.message.answer(
-                "Чтобы пользоваться ботом, подпишитесь на следующие каналы 👇",
+                "Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling 👇",
                 reply_markup=not_channels_button(not_sub_channels, not_sub_bots),
             )
 

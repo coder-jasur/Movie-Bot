@@ -11,3 +11,4 @@ class Settings:
     db_password = env.str("POSTGRES_PASSWORD")
     db_host = env.str("POSTGRES_HOST")
     db_port = env.str("POSTGRES_PORT")
+    redis_url = env.str("REDIS_URL")

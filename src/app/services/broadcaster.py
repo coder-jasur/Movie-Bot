@@ -2,7 +2,8 @@ import asyncio
 import logging
 from typing import Union, Optional
 
-import asyncpg
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram import Bot, types
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest, TelegramRetryAfter, TelegramAPIError
 from aiogram.types import (
@@ -11,6 +12,7 @@ from aiogram.types import (
 )
 
 from src.app.database.queries.user import UserActions
+from src.app.database.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ class Broadcaster:
     def __init__(
             self,
             bot: Bot,
-            pool: asyncpg.Pool,
+            session: AsyncSession,
             admin_id: int,
             broadcasting_message: Message | None = None,
             album: list[Message] | None = None,
@@ -38,7 +40,7 @@ class Broadcaster:
             sleep_seconds: Delay between messages to avoid rate limits
         """
         self._bot = bot
-        self._pool = pool
+        self._session = session
         self.broadcasting_message = broadcasting_message
         self.album = album
         self.admin_id = admin_id
@@ -141,7 +143,7 @@ class Broadcaster:
             logger.info("Starting batch broadcast")
 
             # Обрабатываем пользователей пачками
-            users_actions = UserActions(self._pool)
+            users_actions = UserActions(self._session)
             async for user_ids, offset in users_actions.iterate_user_ids(self.batch_size):
                 # Обрабатываем текущую пачку пользователей
                 await self._process_batch(user_ids, info_message, info_message_text)
@@ -341,16 +343,12 @@ class Broadcaster:
         if not user_ids:
             return
 
-        query = """
-            UPDATE users
-            SET status = $1
-            WHERE tg_id = ANY($2::bigint[])
-        """
+        stmt = update(User).where(User.tg_id.in_(user_ids)).values(status=status)
 
         try:
-            async with self._pool.acquire() as conn:
-                await conn.execute(query, status, user_ids)
-                logger.debug(f"Updated {len(user_ids)} users to status: {status}")
+            await self._session.execute(stmt)
+            await self._session.commit()
+            logger.debug(f"Updated {len(user_ids)} users to status: {status}")
         except Exception as e:
             logger.error(f"Failed to update user status: {e}")
             raise
@@ -372,52 +370,35 @@ class Broadcaster:
             deactivated_user_ids: List of IDs for users who deactivated
         """
         try:
-            # Используем транзакцию для атомарности
-            async with self._pool.acquire() as conn:
-                async with conn.transaction():
-                    # Обработка заблокированных пользователей
-                    if blocked_user_ids:
-                        query = """
-                            UPDATE users
-                            SET status = $1
-                            WHERE tg_id = ANY($2::bigint[])
-                        """
-                        await conn.execute(query, "blocked", blocked_user_ids)
-                        logger.info(f"Marked {len(blocked_user_ids)} users as BLOCKED")
+            # Обработка заблокированных пользователей
+            if blocked_user_ids:
+                stmt = update(User).where(User.tg_id.in_(blocked_user_ids)).values(status="blocked")
+                await self._session.execute(stmt)
+                logger.info(f"Marked {len(blocked_user_ids)} users as BLOCKED")
 
-                    # Обработка удаленных аккаунтов
-                    if deleted_user_ids:
-                        query = """
-                            UPDATE users
-                            SET status = $1
-                            WHERE tg_id = ANY($2::bigint[])
-                        """
-                        await conn.execute(query, "deleted", deleted_user_ids)
-                        logger.info(f"Marked {len(deleted_user_ids)} users as DELETED")
+            # Обработка удаленных аккаунтов
+            if deleted_user_ids:
+                stmt = update(User).where(User.tg_id.in_(deleted_user_ids)).values(status="deleted")
+                await self._session.execute(stmt)
+                logger.info(f"Marked {len(deleted_user_ids)} users as DELETED")
 
-                    # Обработка ограниченных аккаунтов
-                    if limited_users_ids:
-                        query = """
-                            UPDATE users
-                            SET status = $1
-                            WHERE tg_id = ANY($2::bigint[])
-                        """
-                        await conn.execute(query, "limited", limited_users_ids)
-                        logger.info(f"Marked {len(limited_users_ids)} users as LIMITED")
+            # Обработка ограниченных аккаунтов
+            if limited_users_ids:
+                stmt = update(User).where(User.tg_id.in_(limited_users_ids)).values(status="limited")
+                await self._session.execute(stmt)
+                logger.info(f"Marked {len(limited_users_ids)} users as LIMITED")
 
-                    # Обработка деактивированных аккаунтов
-                    if deactivated_user_ids:
-                        query = """
-                            UPDATE users
-                            SET status = $1
-                            WHERE tg_id = ANY($2::bigint[])
-                        """
-                        await conn.execute(query, "deactivated", deactivated_user_ids)
-                        logger.info(f"Marked {len(deactivated_user_ids)} users as DEACTIVATED")
+            # Обработка деактивированных аккаунтов
+            if deactivated_user_ids:
+                stmt = update(User).where(User.tg_id.in_(deactivated_user_ids)).values(status="deactivated")
+                await self._session.execute(stmt)
+                logger.info(f"Marked {len(deactivated_user_ids)} users as DEACTIVATED")
+            
+            await self._session.commit()
 
         except Exception as e:
             logger.error(f"Failed to mark user statuses: {e}")
-            # asyncpg автоматически откатывает транзакцию при ошибке
+            await self._session.rollback()
             raise
 
     async def _delete_preview(self) -> None:

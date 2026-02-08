@@ -3,16 +3,6 @@ import enum
 from aiogram.filters.callback_data import CallbackData
 
 
-class FeatureFilmsCD(CallbackData, prefix="feature_films"):
-    actions: str
-
-
-class MiniSeriesCD(CallbackData, prefix="mini_series"):
-    actions: str
-
-class SeriesCD(CallbackData, prefix="series"):
-    actions: str
-
 class FeatureFilmPlayerCD(CallbackData, prefix="feature_film_player"):
     code: int
     actions: str
@@ -38,17 +28,7 @@ class ActionType(str, enum.Enum):
     save_to_favorites = "save_to_favorites"
     remove_in_favorites = "remove_in_favorites"
 
-class DeleteMovie(CallbackData, prefix="delete_movie"):
-    code: int
-    season: int = None
-    series: int = None
+
+class ReferralCD(CallbackData, prefix="referral"):
     action: str
-
-
-class ChannelsCD(CallbackData, prefix="chanels_call"):
-    channel_id: int
-    actions: str
-
-class BotCD(CallbackData, prefix="bot_call"):
-    bot_username: str
-    actions: str
+    id: int = 0
